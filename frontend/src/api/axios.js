@@ -7,3 +7,20 @@ export const api = axios.create({
     ? 'http://localhost:8000'
     : 'https://webl-7q46.onrender.com',
 });
+
+api.interceptors.request.use(async (config) => {
+  try {
+    // Read active session token from Clerk
+    if (window.Clerk && window.Clerk.session) {
+      const token = await window.Clerk.session.getToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to attach Clerk token to request:", err);
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api } from "../api/axios.js";
 import Editor from "@monaco-editor/react";
 import LivePreview from '../components/LivePreview';
@@ -9,13 +10,19 @@ import { stripIds } from '../utils/stripIds.js';
 // Import your raw seed file layout
 import { testResponse } from '../components/testResponse'; 
 import { injectImageFallbacks } from '../utils/injectImageFallbacks.js';
+import { useAuth } from '@clerk/clerk-react';
 
 function Project() {
+  const { id: projectId } = useParams();
+  const navigate = useNavigate();
+
   const [prompt, setPrompt] = useState('');
   const [files, setFiles] = useState({}); 
+  const [previewFiles, setPreviewFiles] = useState({}); // 👈 Debounced copy for LivePreview
   const [activeFile, setActiveFile] = useState(""); 
   const [selectedTreeFile, setSelectedTreeFile] = useState(""); 
   const [loading, setLoading] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('Saved');
   const [leftWidth, setLeftWidth] = useState(40);
   const [isDragging, setIsDragging] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
@@ -25,6 +32,12 @@ function Project() {
   const containerRef = useRef(null);
   const editorPanelRef = useRef(null);
   const dragStartRef = useRef({ startX: 0, startWidth: 0, containerWidth: 1 });
+
+  const { getToken } = useAuth();
+  // Timers for 2-second debouncing
+  const saveTimeoutRef = useRef(null);
+  const previewTimeoutRef = useRef(null);
+  const isInitialLoad = useRef(true);
 
   // Centralized processing engine for both live and mock operations
   const processWorkspacePayload = async (payload) => {
@@ -75,7 +88,11 @@ function Project() {
         : String(fileContent);
 
       if (formattedPath.endsWith('.jsx') || formattedPath.endsWith('.js')) {
-        pureCodeString = injectImageFallbacks(pureCodeString);
+        try {
+          pureCodeString = formatCode(pureCodeString, formattedPath);
+        } catch (e) {
+          console.warn(`[WebL Formatter] Skipping ${formattedPath}:`, e);
+        }
       }
 
       normalizedFiles[formattedPath] = pureCodeString;
@@ -95,10 +112,9 @@ function Project() {
       delete normalizedFiles['App.jsx'];
     }
 
-    // 🛡️ MISSING FILE STUB GUARD: Prevents missing imports from crashing the preview
+    // 🛡️ MISSING FILE STUB GUARD
     if (normalizedFiles['src/App.jsx']) {
       const appCode = normalizedFiles['src/App.jsx'];
-      // Regex to catch imports like: import Donate from './pages/Donate';
       const importRegex = /import\s+(\w+)\s+from\s+['"]\.\/(pages|components)\/([^'"]+)['"]/g;
       let match;
     
@@ -111,23 +127,23 @@ function Project() {
           console.warn(`[WebL Engine] Injecting stub placeholder for missing file: ${fullPath}`);
           normalizedFiles[fullPath] = `import React from 'react';
         
-    export default function ${componentName}({ onNavigate }) {
-      return (
-        <div className="max-w-4xl mx-auto my-12 p-8 bg-white rounded-xl shadow-md text-center font-sans">
-          <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 font-bold">
-            ${componentName.charAt(0)}
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">${componentName} Page</h2>
-          <p className="text-slate-500 mb-6 text-sm">This page placeholder was created automatically.</p>
-          <button 
-            onClick={() => onNavigate && onNavigate('home')} 
-            className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            Back to Home
-          </button>
-        </div>
-      );
-    };`;
+export default function ${componentName}({ onNavigate }) {
+  return (
+    <div className="max-w-4xl mx-auto my-12 p-8 bg-white rounded-xl shadow-md text-center font-sans">
+      <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 font-bold">
+        ${componentName.charAt(0)}
+      </div>
+      <h2 className="text-2xl font-bold text-slate-800 mb-2">${componentName} Page</h2>
+      <p className="text-slate-500 mb-6 text-sm">This page placeholder was created automatically.</p>
+      <button 
+        onClick={() => onNavigate && onNavigate('home')} 
+        className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 transition-colors"
+      >
+        Back to Home
+      </button>
+    </div>
+  );
+};`;
         }
       }
     }
@@ -135,22 +151,104 @@ function Project() {
     return normalizedFiles;
   };
 
+  // 1. Initial Load: Fetch from Backend if ID present, or load seed fallback
   useEffect(() => {
-    const loadDefaultWorkspace = async () => {
-      try {
-        const processed = await processWorkspacePayload(testResponse.webfiles);
-        setFiles(processed);
-        setActiveFile("src/App.jsx");
-        setSelectedTreeFile("src/App.jsx"); 
-      } catch (err) {
-        console.error("Failed to parse test response simulation:", err);
-      }
-    };
-    loadDefaultWorkspace();
-  }, []);
+  const loadWorkspace = async () => {
+    if (!projectId) {
+      // Unsaved sandbox mode
+      const processed = await processWorkspacePayload(blankTemplate);
+      setFiles(processed);
+      setPreviewFiles(processed);
+      setActiveFile("src/App.jsx");
+      setSelectedTreeFile("src/App.jsx");
+      setHasGenerated(false); // 👈 Force Create Mode for Sandbox
+      return;
+    }
 
-  // 🛠️ DRAGGABLE SEPARATION BAR LOGIC (Zero-Jump Pixel Precision)
-  // 🛠️ 1:1 PHYSICAL POINTER-LOCKED DRAG LOGIC
+    try {
+      setLoading(true);
+      const res = await api.get(`/api/projects/${projectId}`);
+      const projectData = res.data;
+
+      // 1. Process files
+      const rawFS = projectData.fileSystem;
+      const sourcePayload = (rawFS && Object.keys(rawFS).length > 0) ? rawFS : blankTemplate;
+      const processed = await processWorkspacePayload(sourcePayload);
+
+      setFiles(processed);
+      setPreviewFiles(processed);
+
+      const initialEntry = "src/App.jsx" in processed ? "src/App.jsx" : (Object.keys(processed)[0] || "");
+      setActiveFile(initialEntry);
+      setSelectedTreeFile(initialEntry);
+
+      // 2. 🎯 EXACT FIX: Trust projectData.hasGenerated from backend!
+      // If backend explicitly says false, OR if App.jsx contains starter text -> setHasGenerated(false)
+      const appContent = processed["src/App.jsx"] || "";
+      const isBlankCanvas = appContent.includes("WebL Studio Canvas") || appContent.includes("Your Blank Canvas");
+
+      if (projectData.hasGenerated === false || isBlankCanvas) {
+        setHasGenerated(false); // 🚀 Force Create Mode (`/api/gemini`)
+      } else {
+        setHasGenerated(true);  // ⚡ Enable Update Mode (`/api/gemini/update-workspace`)
+      }
+
+    } catch (err) {
+      console.error("Failed to fetch project, falling back to blank starter:", err);
+      const processed = await processWorkspacePayload(blankTemplate);
+      setFiles(processed);
+      setPreviewFiles(processed);
+      setActiveFile("src/App.jsx");
+      setSelectedTreeFile("src/App.jsx");
+      setHasGenerated(false); // Fallback to Create Mode
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  loadWorkspace();
+}, [projectId]);
+
+  // 2. 2-Second Debounced Auto-Save & Live Preview Update
+  useEffect(() => {
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
+    }
+
+    if (Object.keys(files).length === 0) return;
+
+    setSaveStatus('Unsaved...');
+
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
+
+    // Update Live Preview after 2s pause
+    previewTimeoutRef.current = setTimeout(() => {
+      setPreviewFiles(files);
+    }, 2000);
+
+    // Save to Backend after 2s pause
+    if (projectId) {
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          setSaveStatus('Saving...');
+          await api.put(`/api/projects/${projectId}`, { fileSystem: files });
+          setSaveStatus('Saved');
+        } catch (err) {
+          console.error("Auto-save error:", err);
+          setSaveStatus('Save Failed');
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
+    };
+  }, [files, projectId]);
+
+  // 🛠️ DRAGGABLE SEPARATION BAR LOGIC
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (!isDragging) return;
@@ -158,13 +256,9 @@ function Project() {
       const { startX, startWidth, trackWidth } = dragStartRef.current;
       if (!trackWidth) return;
 
-      // Exact pixel displacement from initial click
       const deltaX = e.clientX - startX;
-      
-      // Exact percentage conversion based on actual available track width
       const deltaPercent = (deltaX / trackWidth) * 100;
 
-      // Clamp strictly between 15% and 85%
       const newWidth = Math.max(15, Math.min(85, startWidth + deltaPercent));
       setLeftWidth(newWidth);
     };
@@ -191,54 +285,65 @@ function Project() {
   };
 
   const generateGeminiSite = async () => {
-    if (!prompt.trim()) return;
-    setLoading(true);
-    
-    try {
-      let response;
+  if (!prompt.trim()) return;
+  if (!projectId) {
+    alert("Please save or open a project before generating.");
+    return;
+  }
 
-      if (hasGenerated) {
-        console.log("⚡ Executing Incremental Component/Page Patch Operation...");
-        response = await api.post('/api/gemini/update-workspace', {
-          currentFileSystem: files,
-          userPrompt: prompt
-        });
-      } else {
-        console.log("✨ Executing Foundational Site Generation Operation...");
-        response = await api.post('/api/gemini', { prompt: prompt });
-        console.log("Code: ", response);
+  setLoading(true);
+  
+  try {
+    const token = await getToken();
+
+    console.log(
+      hasGenerated 
+        ? "⚡ Executing Incremental Component/Page Patch Operation..." 
+        : "✨ Executing Foundational Site Generation Operation..."
+    );
+
+    // 🎯 Hits your backend route: router.post('/:id/generate', generateAIWorkspace)
+    const response = await api.post(
+      `/api/projects/${projectId}/generate`,
+      {
+        prompt: prompt,
+        currentFileSystem: files,
+        hasGenerated: hasGenerated,
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` },
       }
-      
-      console.log("=== WEBL DIAGNOSTIC PAYLOAD LOOKUP ===");
-      
-      if (!response.data) {
-        throw new Error("No network data context returned from core API endpoint.");
-      }
+    );
 
-      const updatedFilesSource = response.data.fileSystem || response.data;
-      const processed = await processWorkspacePayload(updatedFilesSource);
-      
-      if (!processed || Object.keys(processed).length === 0) {
-        throw new Error("Resolved data could not be compiled into a valid file layout map.");
-      }
-
-      setFiles(processed);
-      setPrompt(""); 
-      setHasGenerated(true);
-
-      if (!processed[activeFile]) {
-        const defaultEntry = processed["src/App.jsx"] || Object.keys(processed)[0];
-        setActiveFile(defaultEntry);
-        setSelectedTreeFile(defaultEntry);
-      }
-
-    } catch (error) {
-      console.error("Workspace production construction failed:", error);
-      alert("Error compiling directory layout structure: " + error.message);
-    } finally {
-      setLoading(false);
+    if (!response.data) {
+      throw new Error("No network data returned from core API endpoint.");
     }
-  };
+
+    const updatedFilesSource = response.data.fileSystem || response.data;
+    const processed = await processWorkspacePayload(updatedFilesSource);
+
+    if (!processed || Object.keys(processed).length === 0) {
+      throw new Error("Resolved data could not be compiled into a valid file layout map.");
+    }
+
+    setFiles(processed);
+    setPreviewFiles(processed); // Immediate live preview update
+    setPrompt(""); 
+    setHasGenerated(true); // 🚀 Flips to Update Mode for all future prompts!
+
+    if (!processed[activeFile]) {
+      const defaultEntry = "src/App.jsx" in processed ? "src/App.jsx" : (Object.keys(processed)[0] || "");
+      setActiveFile(defaultEntry);
+      setSelectedTreeFile(defaultEntry);
+    }
+
+  } catch (error) {
+    console.error("Workspace generation failed:", error);
+    alert("Error building workspace: " + (error.response?.data?.message || error.message));
+  } finally {
+    setLoading(false);
+  }
+};
 
   const copyToClipboard = async () => {
     const activeFileObj = files[activeFile];
@@ -279,7 +384,7 @@ function Project() {
 
     try {
       await navigator.clipboard.writeText(codeToCopy);
-      alert(`Production-grade React Router Dom code copied for: ${activeFile}`);
+      alert(`Code copied for: ${activeFile}`);
     } catch (error) {
       console.error("Clipboard write blocked:", error);
       navigator.clipboard.writeText(codeToCopy);
@@ -354,13 +459,23 @@ function Project() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-900 text-white font-sans">
       {/* Top Controls Header */}
-      <header className="h-16 border-b border-gray-800 bg-gray-900 flex items-center px-6 justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-          <span className="font-bold tracking-tight text-xl">WebL Studio</span>
+      <header className="h-16 border-b border-gray-800 bg-gray-900 flex items-center px-6 justify-between shrink-0 gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/projects')}
+            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded-lg text-xs font-semibold transition-all"
+            title="Return to Projects Dashboard"
+          >
+            ← Projects
+          </button>
+          
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+            <span className="font-bold tracking-tight text-xl hidden sm:inline">WebL Studio</span>
+          </div>
         </div>
 
-        <div className="flex-1 max-w-2xl mx-8 flex gap-2">
+        <div className="flex-1 max-w-2xl mx-4 flex gap-2">
           <input
             type="text"
             className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-4 py-2 focus:outline-none focus:border-blue-500 text-white text-sm"
@@ -372,17 +487,29 @@ function Project() {
           <button
             onClick={generateGeminiSite}
             disabled={loading}
-            className={`px-5 py-2 rounded-md font-bold text-sm ${
+            className={`px-5 py-2 rounded-md font-bold text-sm shrink-0 ${
               loading ? 'bg-gray-700 text-gray-400' : 'bg-blue-600 hover:bg-blue-500 text-white'
             }`}
           >
-            {loading ? 'Processing Patch...' : hasGenerated ? 'Patch App' : 'Build'}
+            {loading ? 'Processing...' : hasGenerated ? 'Patch App' : 'Build'}
           </button>
         </div>
 
-        <button onClick={copyToClipboard} className="text-xs bg-gray-800 border border-gray-700 px-4 py-2 rounded-md hover:bg-gray-700">
-          Copy File Context
-        </button>
+        <div className="flex items-center gap-3">
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
+            saveStatus === 'Saved' 
+              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+              : saveStatus === 'Saving...' 
+              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse' 
+              : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+          }`}>
+            {saveStatus}
+          </span>
+
+          <button onClick={copyToClipboard} className="text-xs bg-gray-800 border border-gray-700 px-3 py-2 rounded-md hover:bg-gray-700 hidden sm:block">
+            Copy File Context
+          </button>
+        </div>
       </header>
 
       {/* Main Workspace Container */}
@@ -407,13 +534,13 @@ function Project() {
           </div>
         </div>
 
-        {/* Monaco Editor Panel (Added min-w-0 and overflow-hidden to prevent flex expansion glitch) */}
+        {/* Monaco Editor Panel */}
         <div ref={editorPanelRef} style={{ width: `${leftWidth}%` }} className="flex flex-col border-r border-gray-800 bg-[#011117] min-w-0 overflow-hidden shrink-0">
-          <div className="px-4 py-2 bg-gray-900 text-[10px] uppercase text-gray-400 font-bold border-b border-gray-800 flex justify-between shrink-0">
-            <span>Editor Buffer</span>
-            <span className="text-blue-500 lowercase font-mono text-[11px] truncate">{activeFile}</span>
+          <div className="h-9 px-4 bg-gray-900 border-b border-gray-800 flex items-center justify-between shrink-0 select-none">
+            <span className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Editor Buffer</span>
+            <span className="text-blue-500 lowercase font-mono text-[11px] truncate max-w-50">{activeFile}</span>
           </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden relative">
             <Editor
               height="100%"
               defaultLanguage="javascript"
@@ -423,6 +550,11 @@ function Project() {
               onChange={handleEditorChange}
               onMount={(editor, monaco) => {
                 editorRef.current = editor;
+
+                setTimeout(() => {
+                  editor.getAction('editor.action.formatDocument')?.run();
+                }, 200);
+
                 editor.onDidChangeModelContent(() => clearHighlight?.());
                 editor.onDidChangeCursorPosition(() => clearHighlight?.());
                 editor.onDidChangeCursorSelection(() => clearHighlight?.());
@@ -438,15 +570,14 @@ function Project() {
           </div>
         </div>
 
-        {/* 🛠️ DRAGGABLE SEPARATOR BAR (1:1 Pixel Pinned) */}
+        {/* 🛠️ DRAGGABLE SEPARATOR BAR */}
         <div 
           onMouseDown={(e) => {
-            e.preventDefault(); // Prevents text selection & cursor drift
+            e.preventDefault();
             if (containerRef.current && editorPanelRef.current) {
               const containerRect = containerRef.current.getBoundingClientRect();
               const editorRect = editorPanelRef.current.getBoundingClientRect();
               
-              // Exact available width for Editor + Preview track
               const trackWidth = containerRect.right - editorRect.left;
 
               dragStartRef.current = {
@@ -462,16 +593,18 @@ function Project() {
           }`} 
         />
 
-        {/* Live Preview Panel (Added flex-1, min-w-0, and overflow-hidden to prevent expanding offscreen) */}
+        {/* Live Preview Panel (Receives debounced previewFiles) */}
         <div className="flex-1 flex flex-col bg-gray-100 relative min-w-0 overflow-hidden">
-          <div className="px-4 py-2 bg-white text-[10px] uppercase text-gray-400 font-bold border-b border-gray-200 shrink-0">Live Preview Output</div>
+          <div className="px-4 py-2 bg-white text-[10px] uppercase text-gray-400 font-bold border-b border-gray-200 shrink-0 flex justify-between items-center">
+            <span>Live Preview Output</span>
+            <span className="text-gray-400 text-[9px] lowercase font-normal">Auto-updates 2s after typing</span>
+          </div>
           
-          {/* Iframe mask during dragging */}
           {isDragging && <div className="absolute inset-0 z-40 cursor-col-resize bg-transparent" />}
           
           <div className="flex-1 min-h-0 overflow-hidden relative">
             <LivePreview 
-              multiFiles={files} 
+              multiFiles={previewFiles} 
               onElementClick={handleElementClick} 
               activeFilePath={selectedTreeFile} 
             />

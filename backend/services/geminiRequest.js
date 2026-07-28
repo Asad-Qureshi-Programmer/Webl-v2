@@ -107,22 +107,29 @@ Rules:
 3. Use Tailwind CSS with absolute responsive configurations. Use inline native <svg> blocks for all vector icons.
 4. You can update existing files (e.g., adding an import statement and rendering a new component inside a page) and create brand new files as needed.
 5. Keep your response scoped strictly to the requested feature. Do not append unrelated changes. Ensure all code blocks are completely syntactically closed.
-6. STRUCTURAL ROUTING AND APPLICATION NAVIGATIONAL DESIGN:
-   - To build multi-page applications without external npm dependencies like react-router-dom, you MUST use a clean, relative file routing structure.
-   - In "src/App.jsx", you MUST import the custom routing wrappers explicitly from a relative router file:
-     import { CustomRouter, CustomRoutes, CustomRoute } from './router.jsx';
-   - CRITICAL COMPONENT STRUCTURE RULE: Every view file or page layout module (e.g., src/pages/Home.jsx, src/pages/Donate.jsx) MUST export its primary interface element as an isolated, singular default export block (e.g., export default function Home() { ... }). Avoid multi-named object syntax declarations in shared page layouts.
-   - Wrap your primary application layout tree inside <CustomRouter>, and define page routes inside <CustomRoutes> using standard path structures:
-     <CustomRoutes>
-       <CustomRoute path="/" element={<Home />} />
-       <CustomRoute path="/donate" element={<Donate />} />
-     </CustomRoutes>
+
+6. ROUTING & STATE ARCHITECTURE PARITY:
+   - To build multi-page applications without external npm dependencies, use state-driven page switching with an activePage state string and an onNavigate callback prop passed to page components (e.g., <Home onNavigate={setActivePage} />).
+   - DO NOT import or use custom router wrappers like CustomRouter, CustomRoutes, or react-router-dom.
+   - If modifying "src/App.jsx", always preserve or include the window postMessage listener for iframe page synchronization:
+     useEffect(() => {
+       const handleMsg = (e) => {
+         if (e.data?.type === 'NAVIGATE_PAGE' && e.data?.page) {
+           setActivePage(e.data.page);
+         }
+       };
+       window.addEventListener('message', handleMsg);
+       return () => window.removeEventListener('message', handleMsg);
+     }, []);
+   - CRITICAL COMPONENT STRUCTURE RULE: Every view file or page layout module (e.g., src/pages/Home.jsx, src/pages/Donate.jsx) MUST export its primary interface element as an isolated default export (e.g., export default function Home() { ... }).
    - Always use clean, professional destructured React hook imports at the top of your files (e.g., import React, { useState, useEffect } from 'react';).
 
-7. MULTI-SECTION SCROLLING ANCHOR ARCHEOLOGY RULES:
-   - For vertical scrolling navigation down to specific modules rendered within the same page display view, you MUST equip target container structures with individual, descriptive, lowercase identification elements.
-   - Action headers, interactive cards, or navigation button arrays targeting these local modules must intercept standard clicks using an operational click handler to perform an automated slide.
-   - Inside your navbar or interactive panel clicks, implement an explicit scrolling execution routine that locates the element by its identification string, calculates the layout coordinates minus an operational layout offset boundary to account for fixed banners, and commands the viewport window frame to transition down smoothly using automated scroll actions.
+7. MULTI-SECTION SCROLLING ANCHOR RULES:
+   - For vertical scrolling navigation down to specific modules rendered within the same page display view, equip target container structures with individual, descriptive, lowercase identification elements (e.g., id="features").
+   - Action headers, interactive cards, or navigation button arrays targeting these local modules must intercept standard clicks using an operational click handler to perform smooth scrolling (e.g., element.scrollIntoView({ behavior: 'smooth' })).
+
+8. IMAGE FALLBACKS:
+   - Never write inline SVG data URIs inside img onError handlers. Use clean Unsplash fallback URLs (e.g., e.target.src = 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&q=80&w=800';).
 
 Target JSON Output Format:
 {

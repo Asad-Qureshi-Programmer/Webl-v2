@@ -6,6 +6,7 @@ import { clerkMiddleware } from '@clerk/express';
 import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import projectRoutes from './routes/projectRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use((req, res, next) => {
 app.use(clerkMiddleware());
 
 // Mount secure API routes
+app.use('/api/users', userRoutes );
 app.use('/api/projects', projectRoutes);
 
 app.get('/', (req, res) => {
