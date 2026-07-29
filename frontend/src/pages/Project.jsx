@@ -27,6 +27,11 @@ function Project() {
   const [isDragging, setIsDragging] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
 
+  // 📱 Mobile-only UI toggles (desktop layout/logic below is completely untouched)
+  const [isTreeOpen, setIsTreeOpen] = useState(false); // slide-over file tree drawer
+  const [mobileView, setMobileView] = useState('code'); // 'code' | 'preview' — which single pane shows on phones
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+
   const decorationsRef = useRef([]);
   const editorRef = useRef(null);
   const containerRef = useRef(null);
@@ -275,6 +280,20 @@ export default function ${componentName}({ onNavigate }) {
     };
   }, [isDragging]);
 
+  // 📱 Watches viewport width so the editor/preview panes know when to stack
+  // full-width on phones instead of using the desktop drag-resize percentage.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const handleChange = (e) => setIsMobile(e.matches);
+    handleChange(mq); // sync immediately on mount
+    if (mq.addEventListener) mq.addEventListener('change', handleChange);
+    else mq.addListener(handleChange); // Safari <14 fallback
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', handleChange);
+      else mq.removeListener(handleChange);
+    };
+  }, []);
+
   const handleElementClick = (clickData) => {
     jumpToElement(clickData);
   };
@@ -282,6 +301,14 @@ export default function ${componentName}({ onNavigate }) {
   const handleTreeFileClick = (filePath) => {
     setActiveFile(filePath);
     setSelectedTreeFile(filePath);
+  };
+
+  // Same as handleTreeFileClick, but also closes the mobile drawer and flips
+  // the mobile view to "Code" so picking a file actually shows it on phones.
+  const handleMobileTreeSelect = (filePath) => {
+    handleTreeFileClick(filePath);
+    setMobileView('code');
+    setIsTreeOpen(false);
   };
 
   const generateGeminiSite = async () => {
@@ -459,8 +486,8 @@ export default function ${componentName}({ onNavigate }) {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-900 text-white font-sans">
       {/* Top Controls Header */}
-      <header className="h-16 border-b border-gray-800 bg-gray-900 flex items-center px-6 justify-between shrink-0 gap-3">
-        <div className="flex items-center gap-3">
+      <header className="border-b border-gray-800 bg-gray-900 flex flex-wrap items-center px-3 sm:px-6 py-2 sm:py-0 sm:h-16 justify-between shrink-0 gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 order-1">
           <button
             onClick={() => navigate('/projects')}
             className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded-lg text-xs font-semibold transition-all"
@@ -475,10 +502,26 @@ export default function ${componentName}({ onNavigate }) {
           </div>
         </div>
 
-        <div className="flex-1 max-w-2xl mx-4 flex gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 order-2 sm:order-3 ml-auto sm:ml-0">
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
+            saveStatus === 'Saved' 
+              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+              : saveStatus === 'Saving...' 
+              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse' 
+              : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+          }`}>
+            {saveStatus}
+          </span>
+
+          <button onClick={copyToClipboard} className="text-xs bg-gray-800 border border-gray-700 px-3 py-2 rounded-md hover:bg-gray-700 hidden sm:block">
+            Copy File Context
+          </button>
+        </div>
+
+        <div className="w-full sm:flex-1 sm:max-w-2xl sm:mx-4 flex gap-2 order-3 sm:order-2">
           <input
             type="text"
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-4 py-2 focus:outline-none focus:border-blue-500 text-white text-sm"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-4 py-2 focus:outline-none focus:border-blue-500 text-white text-sm min-w-0"
             placeholder={hasGenerated ? "Add a new page, insert a section, change styles..." : "Describe a new site layout blueprint..."}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -494,29 +537,76 @@ export default function ${componentName}({ onNavigate }) {
             {loading ? 'Processing...' : hasGenerated ? 'Patch App' : 'Build'}
           </button>
         </div>
+      </header>
 
-        <div className="flex items-center gap-3">
-          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
-            saveStatus === 'Saved' 
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-              : saveStatus === 'Saving...' 
-              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse' 
-              : 'bg-zinc-800 text-zinc-400 border-zinc-700'
-          }`}>
-            {saveStatus}
-          </span>
-
-          <button onClick={copyToClipboard} className="text-xs bg-gray-800 border border-gray-700 px-3 py-2 rounded-md hover:bg-gray-700 hidden sm:block">
-            Copy File Context
+      {/* 📱 Mobile-only toolbar: file-tree drawer toggle + Code/Preview switch.
+          Hidden entirely on md+ where both panes already sit side by side. */}
+      <div className="flex md:hidden items-center gap-2 px-3 py-2 bg-gray-950 border-b border-gray-800 shrink-0">
+        <button
+          onClick={() => setIsTreeOpen(true)}
+          className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md text-xs font-semibold text-gray-200 flex items-center gap-1.5 shrink-0"
+          title="Browse workspace files"
+        >
+          <span aria-hidden="true">☰</span> Files
+        </button>
+        <div className="flex-1 flex bg-gray-800 rounded-md p-0.5 gap-0.5">
+          <button
+            onClick={() => setMobileView('code')}
+            className={`flex-1 py-1.5 text-xs font-bold rounded transition-colors ${
+              mobileView === 'code' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Code
+          </button>
+          <button
+            onClick={() => setMobileView('preview')}
+            className={`flex-1 py-1.5 text-xs font-bold rounded transition-colors ${
+              mobileView === 'preview' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Preview
           </button>
         </div>
-      </header>
+      </div>
+
+      {/* 📱 Mobile file-tree drawer (slide-over). Desktop sidebar below is untouched. */}
+      {isTreeOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setIsTreeOpen(false)} />
+          <div className="absolute left-0 top-0 h-full w-72 max-w-[80%] bg-gray-950 border-r border-gray-800 flex flex-col shadow-2xl">
+            <div className="px-4 py-3 bg-gray-900 flex items-center justify-between border-b border-gray-800 shrink-0">
+              <span className="text-[10px] uppercase text-gray-500 font-black tracking-wider">Workspace Tree</span>
+              <button
+                onClick={() => setIsTreeOpen(false)}
+                className="text-gray-400 hover:text-white text-xl leading-none px-2"
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 font-mono text-xs">
+              {Object.keys(files).map((filePath) => (
+                <button
+                  key={filePath}
+                  onClick={() => handleMobileTreeSelect(filePath)}
+                  className={`w-full text-left px-2 py-1.5 rounded truncate flex items-center gap-1.5 transition-colors ${
+                    activeFile === filePath ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 font-bold' : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200'
+                  }`}
+                >
+                  <span>{filePath.includes('components/') ? '🧩' : filePath.includes('pages/') ? '📂' : filePath.endsWith('.json') ? '⚙️' : '📄'}</span>
+                  {filePath}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Workspace Container */}
       <main ref={containerRef} className={`flex flex-1 w-full overflow-hidden relative ${isDragging ? 'select-none' : ''}`}>
         
-        {/* Workspace Tree Sidebar */}
-        <div className="w-52 bg-gray-950 border-r border-gray-800 flex flex-col shrink-0">
+        {/* Workspace Tree Sidebar (desktop/tablet only — phones use the drawer above) */}
+        <div className="hidden md:flex w-52 bg-gray-950 border-r border-gray-800 flex-col shrink-0">
           <div className="px-4 py-3 bg-gray-900 text-[10px] uppercase text-gray-500 font-black tracking-wider border-b border-gray-800">Workspace Tree</div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1 font-mono text-xs">
             {Object.keys(files).map((filePath) => (
@@ -534,8 +624,12 @@ export default function ${componentName}({ onNavigate }) {
           </div>
         </div>
 
-        {/* Monaco Editor Panel */}
-        <div ref={editorPanelRef} style={{ width: `${leftWidth}%` }} className="flex flex-col border-r border-gray-800 bg-[#011117] min-w-0 overflow-hidden shrink-0">
+        {/* Monaco Editor Panel — full width "Code" pane on phones, resizable side pane on md+ */}
+        <div
+          ref={editorPanelRef}
+          style={{ width: isMobile ? '100%' : `${leftWidth}%` }}
+          className={`${mobileView === 'code' ? 'flex' : 'hidden'} md:flex flex-col border-r border-gray-800 bg-[#011117] min-w-0 overflow-hidden shrink-0`}
+        >
           <div className="h-9 px-4 bg-gray-900 border-b border-gray-800 flex items-center justify-between shrink-0 select-none">
             <span className="text-[10px] uppercase text-gray-400 font-bold tracking-wider">Editor Buffer</span>
             <span className="text-blue-500 lowercase font-mono text-[11px] truncate max-w-50">{activeFile}</span>
@@ -570,7 +664,7 @@ export default function ${componentName}({ onNavigate }) {
           </div>
         </div>
 
-        {/* 🛠️ DRAGGABLE SEPARATOR BAR */}
+        {/* 🛠️ DRAGGABLE SEPARATOR BAR — desktop/tablet only, since phones show one full-width pane at a time */}
         <div 
           onMouseDown={(e) => {
             e.preventDefault();
@@ -588,16 +682,16 @@ export default function ${componentName}({ onNavigate }) {
               setIsDragging(true);
             }
           }} 
-          className={`w-1.5 cursor-col-resize z-50 shrink-0 ${
+          className={`hidden md:block w-1.5 cursor-col-resize z-50 shrink-0 ${
             isDragging ? 'bg-blue-600' : 'bg-gray-800 hover:bg-blue-500'
           }`} 
         />
 
-        {/* Live Preview Panel (Receives debounced previewFiles) */}
-        <div className="flex-1 flex flex-col bg-gray-100 relative min-w-0 overflow-hidden">
+        {/* Live Preview Panel (Receives debounced previewFiles) — full width "Preview" pane on phones */}
+        <div className={`${mobileView === 'preview' ? 'flex' : 'hidden'} md:flex flex-1 flex-col bg-gray-100 relative min-w-0 overflow-hidden w-full md:w-auto`}>
           <div className="px-4 py-2 bg-white text-[10px] uppercase text-gray-400 font-bold border-b border-gray-200 shrink-0 flex justify-between items-center">
             <span>Live Preview Output</span>
-            <span className="text-gray-400 text-[9px] lowercase font-normal">Auto-updates 2s after typing</span>
+            <span className="text-gray-400 text-[9px] lowercase font-normal hidden sm:inline">Auto-updates 2s after typing</span>
           </div>
           
           {isDragging && <div className="absolute inset-0 z-40 cursor-col-resize bg-transparent" />}
