@@ -5,7 +5,7 @@ import axios from "axios";
 export const api = axios.create({
   baseURL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:8000'
-    : 'https://webl-7q46.onrender.com',
+    : 'https://webl-v2.onrender.com',
 });
 
 api.interceptors.request.use(async (config) => {

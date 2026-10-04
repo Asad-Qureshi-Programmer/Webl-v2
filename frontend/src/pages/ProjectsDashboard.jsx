@@ -118,27 +118,27 @@ export default function ProjectsDashboard() {
   return (
     <div className="h-full w-full overflow-y-auto bg-zinc-950 text-white font-sans flex flex-col justify-between">
       {/* Top Navbar */}
-      <header className="h-20 border-b border-zinc-800/80 px-8 flex items-center justify-between max-w-7xl w-full mx-auto shrink-0">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
-          <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-blue-500/30">
+      <header className="min-h-20 border-b border-zinc-800/80 px-4 sm:px-8 py-3 sm:py-0 flex flex-wrap items-center justify-between gap-3 max-w-7xl w-full mx-auto shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 cursor-pointer" onClick={() => navigate('/')}>
+          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-blue-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-blue-500/30 shrink-0">
             W
           </div>
-          <span className="font-bold text-2xl tracking-tight text-white">WebL</span>
+          <span className="font-bold text-xl sm:text-2xl tracking-tight text-white">WebL</span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-zinc-400 hidden sm:inline">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <span className="text-sm font-medium text-zinc-400 hidden lg:inline">
             {user?.primaryEmailAddress?.emailAddress || user?.fullName || 'Developer'}
           </span>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="px-5 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all shadow-lg shadow-blue-600/30 active:scale-95"
+            className="px-3.5 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all shadow-lg shadow-blue-600/30 active:scale-95 whitespace-nowrap"
           >
             + New Project
           </button>
           <button
             onClick={() => signOut(() => navigate('/'))}
-            className="px-4 py-2 text-sm font-semibold text-zinc-400 hover:text-white transition-colors"
+            className="px-2.5 py-2 sm:px-4 text-xs sm:text-sm font-semibold text-zinc-400 hover:text-white transition-colors whitespace-nowrap"
           >
             Sign Out
           </button>
@@ -146,10 +146,10 @@ export default function ProjectsDashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl w-full mx-auto px-8 py-12 flex-1">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-8 py-8 sm:py-12 flex-1">
         <div className="flex justify-between items-end mb-8">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight">Your Projects</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Your Projects</h1>
             <p className="text-zinc-400 text-sm mt-1">Manage and edit your AI-generated React applications</p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function ProjectsDashboard() {
             ))}
           </div>
         ) : projects.length === 0 ? (
-          <div className="text-center py-24 bg-zinc-900/30 border border-zinc-800/60 rounded-3xl p-8">
+          <div className="text-center py-16 sm:py-24 bg-zinc-900/30 border border-zinc-800/60 rounded-3xl p-6 sm:p-8">
             <div className="w-16 h-16 bg-blue-500/10 text-blue-400 rounded-2xl flex items-center justify-center font-bold text-2xl mx-auto mb-4">
               🚀
             </div>

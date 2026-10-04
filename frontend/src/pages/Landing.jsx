@@ -9,19 +9,19 @@ export default function Landing() {
   return (
     <div className="h-full w-full overflow-y-auto bg-zinc-950 text-white font-sans flex flex-col justify-between">
       {/* Top Navigation */}
-      <header className="h-20 border-b border-zinc-800/80 px-8 flex items-center justify-between max-w-7xl w-full mx-auto shrink-0">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
-          <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-blue-500/30">
+      <header className="min-h-20 border-b border-zinc-800/80 px-4 sm:px-8 py-3 sm:py-0 flex flex-wrap items-center justify-between gap-3 max-w-7xl w-full mx-auto shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 cursor-pointer" onClick={() => navigate('/')}>
+          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-blue-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-blue-500/30 shrink-0">
             W
           </div>
-          <span className="font-bold text-2xl tracking-tight text-white">WebL</span>
+          <span className="font-bold text-xl sm:text-2xl tracking-tight text-white">WebL</span>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {token ? (
             <Link
               to="/projects"
-              className="px-6 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all shadow-lg shadow-blue-600/30"
+              className="px-4 py-2 sm:px-6 sm:py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all shadow-lg shadow-blue-600/30 whitespace-nowrap"
             >
               Go to Dashboard
             </Link>
@@ -29,13 +29,13 @@ export default function Landing() {
             <>
               <Link
                 to="/auth?mode=login"
-                className="px-5 py-2.5 text-sm font-semibold text-zinc-300 hover:text-white transition-colors"
+                className="px-3 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-semibold text-zinc-300 hover:text-white transition-colors whitespace-nowrap"
               >
                 Sign In
               </Link>
               <Link
                 to="/auth?mode=signup"
-                className="px-5 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all shadow-lg shadow-blue-600/30 active:scale-95"
+                className="px-4 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all shadow-lg shadow-blue-600/30 active:scale-95 whitespace-nowrap"
               >
                 Get Started Free
               </Link>
@@ -45,13 +45,13 @@ export default function Landing() {
       </header>
 
       {/* Hero Section */}
-      <main className="max-w-5xl mx-auto px-6 py-16 text-center flex-1 flex flex-col justify-center items-center">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-12 sm:py-16 text-center flex-1 flex flex-col justify-center items-center">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-blue-400 font-semibold mb-8">
           <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
           AI-Powered Full-Stack Web Builder
         </div>
 
-        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-[1.1]">
+        <h1 className="text-4xl sm:text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-[1.1]">
           Turn Prompts Into <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">
             Live React Applications
